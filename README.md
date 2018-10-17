@@ -9,3 +9,33 @@
 #### Forwarding Informatio Base (FIB)
 #### Content Store
 #### Pending Interests Table
+
+## Intro to NDN [YouTube] (https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
+- Host based comms don't work well in vehicular networks
+- Network layer can't really support Multicase / mobility / multicast forwarding (spanning tree next hop)
+- NDN has same abstraction (using same name) at app layer and network layer
+- NDN secure the data itself, not the connection
+	- Data centric security: how do we know the data we get back is really what we want
+	- All data has cryptographic signature
+	- Data signed by the producers private key
+	- Data can come from anywhere as we can easily determine if the data is legit
+- Producers of data advertise their prefixes to their network when they come online
+	- Routers know where to pass interest packets on to
+	- Routers cache data (LRU as opposed to dropping data once its been sent out of interface)
+- NDN can be built upon anything (IP, TCP, UDP, Blutooth, 802.11 etc)
+- End-to-End Security in NDN  is application to application not host to host.
+- New Things in NDN:
+	- Sync: multiple parties in distributed app keep synchronized state
+		- TCP / UDP / SMTP etc all only support 1:1 communication
+		- No address --> How do we ensure all users (eg in a chat room) have the same data?
+			- Set reconciliation between participants that syncs data in a namespace
+			- Use a digest of their current data (hash) and exchange these to detect missing data
+	- Repo: persistent storage across network (instead of just opurtunistic caching)
+		- Producer can go offline
+		- Producers produce data which is stored by Repos (Servers)
+		- Data can be served by repos
+
+
+## Papers to Read
+- Schematizing Trust in Named Data Networking
+- A Survey of Distributed Dataset Synchronization in Named Data Networking 
