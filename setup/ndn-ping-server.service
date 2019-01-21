@@ -1,0 +1,14 @@
+[Unit]
+Description=NDN Ping Server Runner for machine_name
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=stefano
+ExecStart=/usr/bin/env ndnpingserver /com/stefanolupo/machine_name
+
+[Install]
+WantedBy=multi-user.target
