@@ -29,8 +29,8 @@ echo "Successfully installed software, setting up route to desktop.."
 ## Configure default nodes
 
 ## Create UDP tunnel to desktop
-ndfc face create udp://$desktop
-ndfc route add $prefix udp://$desktop
+nfdc face create udp://$desktop
+nfdc route add $prefix udp://$desktop
 ndnping $prefix -c 5
 
 # Create a ping server daemon
