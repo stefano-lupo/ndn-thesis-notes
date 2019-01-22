@@ -10,7 +10,7 @@
 #### Content Store
 #### Pending Interests Table
 
-## Intro to NDN [YouTube] (https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
+## Intro to NDN [YouTube](https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
 - Host based comms don't work well in vehicular networks
 - Network layer can't really support Multicase / mobility / multicast forwarding (spanning tree next hop)
 - NDN has same abstraction (using same name) at app layer and network layer
@@ -35,6 +35,41 @@
 		- Producers produce data which is stored by Repos (Servers)
 		- Data can be served by repos
 
+# [Security Support in NDN](https://named-data.net/wp-content/uploads/2018/04/ndn-0057-2-ndn-security.pdf)
+- Retrieval of *secured* data packets instead of delivery of packets between hosts
+- Data is secured directly at Network Layer
+- *"From 10,000 feet, one could view the basic idea of NDN as shifting HTTP’s request (for a named data object)-andresponse (with the object) semantics to the network layer [1]"*
+- NDN packets are immutable
+- At time of creation, producer uses its key to sign the data and this sig is stored in the NDN packet
+	- This binds the **name** of the data to the **content** of the data
+	- This whole thing can also be encrypted if needed
+- Each name (e.g. /com/stefanolupo/desktop) must generate a key pair.
+	- An NDN certificate then binds the public key to that name
+		- Certifies user's ownership of that name and the key
+		- Certified names are known as **identities**
+- **User's must know which keys can legitmately sign what data
+## Trust Authorities
+- Certificate authority for a given namespace
+- Allows users to get certs for a given namespace (e.g. /com/stefnaolupo)
+- Typically done using commercial certificate authorities (LetsEncrypt) or global trust anchors (DNSSEC)
+- NDN does things differently (Simple Distributed Security Infrastructure)
+	- Each networked system (e.g. a smart home or university) establishses its own trust anchos
+	- Entities under this network use this trust anchor
+## Trust Policies
+- Applciations define trust policies to determine whether a packet or identity is trustworthy or not
+...
+### NDN Certificates
+- These are just typical NDN Data packets carrrying public key info and can be fetched with interest packets
+- Use the following convention: `/<prefix>/KEY/<key-id>/<issuer-info>/<cert-version>`
+...
+
+### NDNFit Case Study
+- **Security Bootstrapping**: system needs to be initialized by sec bootstraping before it can function
+- Allows entities to obtain trust anchors, certs and trust policies
+- Alice controls the entire system here so trust anchor is her certificate `/ndnfit/alice/KEY/key001/ndnfit-agent/version`
+	- Entities will trust Alice (the certificate signer)
+	- This will allow entities to discover other authentic entities
+	- Assume we can set up trust anchor securly (out of bound)
 
 # [Matryoshka: Design of NDN Multiplayer Online Game](http://conferences2.sigcomm.org/acm-icn/2014/papers/p209.pdf)
 - Two parts to syncing state for MMOG (Massively MOG)

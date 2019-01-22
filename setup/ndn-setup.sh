@@ -5,6 +5,7 @@ laptop="192.168.1.11"
 prefix="/com/stefanolupo"
 
 machine_name=$1
+usern_name=$2
 service_name="ndn-ping-server.service"
 
 if [ "$machine_name" == "" ]
@@ -12,7 +13,11 @@ then
   echo "No machine name  given, exiting.."
   exit
 fi
-
+if [ "$user_name" == "" ]
+then
+  echo "No user name given, exiting.."
+  exit
+fi
 
 ## Install NFD
 sudo apt install software-properties-common -y
@@ -31,7 +36,7 @@ echo "Successfully installed software, setting up route to desktop.."
 ## Create UDP tunnel to desktop
 nfdc face create udp://$desktop
 nfdc route add $prefix udp://$desktop
-ndnping $prefix -c 5
+ndnping $prefix/desktop -c 5
 
 # Create a ping server daemon
 echo "Setting up auto start daemon for ping server"
