@@ -24,10 +24,8 @@ sudo apt install software-properties-common -y
 sudo add-apt-repository ppa:named-data/ppa -y
 sudo apt update
 sudo apt install nfd -y
-sudo service nfd status
-
-## Grab the CXX Library, prereqs and NDN Tools
 sudo apt install ndn-tools -y
+sudo service nfd status
 
 echo "Successfully installed software, setting up route to desktop.."
 
@@ -35,8 +33,14 @@ echo "Successfully installed software, setting up route to desktop.."
 
 ## Create UDP tunnel to desktop
 nfdc face create udp://$desktop
-nfdc route add $prefix udp://$desktop
-ndnping $prefix/desktop -c 5
+nfdc route add $prefix/desktop udp://$desktop
+
+## Create UDP tunnel to ndn box
+nfdc face create udp://ndn.stefanolupo.com
+nfdc route add $prefix/ndnbox udp://ndn.stefanolupo.com
+
+## Try ping the NDN box
+ndnping $prefix/ndnbox -c 5
 
 # Create a ping server daemon
 echo "Setting up auto start daemon for ping server"
