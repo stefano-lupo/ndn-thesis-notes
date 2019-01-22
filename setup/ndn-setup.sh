@@ -5,7 +5,7 @@ laptop="192.168.1.11"
 prefix="/com/stefanolupo"
 
 machine_name=$1
-usern_name=$2
+user_name=$2
 service_name="ndn-ping-server.service"
 
 if [ "$machine_name" == "" ]
@@ -40,7 +40,7 @@ ndnping $prefix/desktop -c 5
 
 # Create a ping server daemon
 echo "Setting up auto start daemon for ping server"
-sudo sed -e "s/machine_name/$machine_name/g" ndn-ping-server.service > /etc/systemd/system/$service_name
+sudo sed -e "s/machine_name/$machine_name/g" ndn-ping-server.service | sed -e "s/user_name/$user_name/g" > /etc/systemd/system/$service_name
 sudo systemctl daemon-reload
 sudo systemctl start $service_name
 sudo systemctl enable $service_name

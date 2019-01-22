@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-User=stefano
+User=user_name
 ExecStart=/usr/bin/env ndnpingserver /com/stefanolupo/machine_name
 
 [Install]
