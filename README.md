@@ -1,14 +1,13 @@
-# Notes on NDN / ICN
-## Networking Named Content [Van Jacobson]()
+# Networking Named Content [Van Jacobson](https://named-data.net/wp-content/uploads/Jacob.pdf)
 - Current internet methodology still based on host-host connection abstraction (telephone net)
 - Uses **interest packets** to allow node to express interest in a named piece of data to network
 - **Data packets** satisfy these interest packets and are returned to the consumer
 
 
-### CCN Node Model
-#### Forwarding Informatio Base (FIB)
-#### Content Store
-#### Pending Interests Table
+## CCN Node Model
+### Forwarding Informatio Base (FIB)
+### Content Store
+### Pending Interests Table
 
 ## Intro to NDN [YouTube](https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
 - Host based comms don't work well in vehicular networks
@@ -133,6 +132,8 @@
 	- NDN on the otherhand just secures the data and avoids this problem
 - TCP/IP requires governing CAs 
 	- NDN allows for finer grained control as trust policies can use the semantics of the names
+
+
 # [Matryoshka: Design of NDN Multiplayer Online Game](http://conferences2.sigcomm.org/acm-icn/2014/papers/p209.pdf)
 - Two parts to syncing state for MMOG (Massively MOG)
 - Recursively partitiion virtual environment into smaller and smaller chunks (form tree like structure)
@@ -290,18 +291,7 @@
 - Some approaches exist for measuring the degree of inconsistency
 - Worth looking into if needs arise.
 
-# Distributed Hash Tables
-- P2P Nets: nodes only know about small fraction of nodes in network (to make this feasible)
-- Distribute data throughout a P2P network
-- Each node will store some of the data and some of the routing table
-- DHTs are **NOT** O(1) like typical hash tables
-- Each node is assigned a partition of the key space
-	- Eg key is an int: node 0 gets 0-10, node 1 gets 10-20 etc
-	- Keys are run through a hash function before lookups
-- On looking up
-	- Ask known nodes for key
-	- They return their knowledge of routing information
-	- Next hop is the node that has the keyspace closest to your key
+
 
 ## MMOG Architectures
 ### Client-Server
@@ -387,11 +377,98 @@
 - Usual mutual notification systems to allow for node dicsovery
 	- A node in your AOI will inform you if a new node is approaching your AOI
 	- You can then contact that node directly and neighbourship formed
-	
+
+
+# Distributed Dataset Synchronization Survey(https://named-data.net/wp-content/uploads/2017/05/ndn-0053-1-sync-survey.pdf)
+- Using NDN differs from TCP in three ways
+	1. NDN naturally supports data retrieval among multiple parties, TCP only between two parties
+	2. Not all communicating parties must be interconnected
+	3. Does not care _from where_ data was obtained as security inherent in data
+- Dataset sync boils down to syncrhonization of the namespace in which all data packets live (e.g. /com/stefanolupo/ndngame)
+## CCNx 0.8 Sync
+- Used to sync collections
+- Maintain a tree structure containing the hashses of the data names stored in the tree
+- Leaf nodes are just hash(data_name) (eg (`hash("/com/stefanolupo/ndngame/status/stefano")`))
+- Parent nodes are the sum of the hashes of their child nodes
+- The root node (e.g. `/com/stefanolupo/ndngame/status`) is then a crytographic summary of the dataset
+- On update / insertion, root hash recomputed
+	- Sync agent periodically advertises latest root hash (`H0`) by sending `RootAdvice` interest to other nodes
+		- This is sent over some multicast prefix (e.g. `/coms/stefanolupo/ndngame/broadcast/status/<root_hash_value>`)
+	- When sync agent receives `RootAdvice` with hash value different to their own (e.g. `H2` --> `H2'` on remote node):
+		- Replies with a `RootAdviceReply` containing their updated root hash value `H0'`
+		- Out of date node now knows the updated root hash value `H0'`
+		- Sends `NodeFetch` Interest for `H0'` (e.g. `/com/stefanolupo/ndngame/node-fetch/<H0'>`)
+		- Gets back the list nodes which are direct children to the root node requested (`[H1, H2']`)
+		- If remote child node has same hash as local one, its ignored
+			- Otherwise this is recursively done until the names of all the updated / inserted data are discovered
+			- Then that data is fetched using standard interests
+
+![CCN Sync Scheme](./img/dataset-sync/CCNx_sync_scheme.png)
+- Problem: what if 2 different repos update simultaneously
+	- There would need to be 2 `RootAdviceReplies` for the same interest (but only the first will be used to satisfy the `RootAdvice`)
+	- Solution is the node who published the `RootAdvice` adds the received root hash to an exclude filter and issues the interest again
+		- This will then pickup another (if one exists) `RootAdviceReply` while ignoring the one it alread received.
+- Problem: data in the sync tree **cannot be deleted** as algorithm cannot distinguish between removal of data and a repo which just hasn't yet received a piece of data (size monotonically grows)
+
+## iSync
+- Uses [Invertible Bloom Filter]("misc.md") to store sync state
+- Advertises digest of its IBF `digest broadcast` Interest but **doesn't expect a reply** unless someone needs the updated version
+	- These just sit in the PIT (which is a little gross)
+	- This avoids the problem of multiple replies
+
+## CCNx 1.0 Sync
+- Note no actual implementation of this
+- Uses (possibly segmented) manifest to store all of the names (or hashes of the names) of the data it contains
+- Nodes use interest packets to advertise the hash of its local manifest
+- Once node notices a different hash, sends out interests for the new manifest
+	- Compares names listed to its own manifest
+	- Sends out interests for the data
+
+## CronoSync
+![ChronoSync Scheme](./img/dataset-sync/ChronoSync_scheme)
+- Maintains a sync tree 
+	- Each leaf in the tree contains a node's prefix and their current sequence number
+		- `hash(prefix + seq#)` represents that node's digest `Di`
+		- Root Digest maintained as `hash(D0...Dn)`
+- Each node has outstanding long lived interest is sent out for `/<broadcast_prefix>/<root_digest>`
+- Aggregated by PITs in routers
+- Upon locally producing some new data:
+	- Replies to the root digest interest **with the name of the newly published sync data**
+		- This differs from CCNx 0.8 which replies with the new root digest
+		- Nodes update their local sync tree and send new Interest for new root
+		- Then can send out interests for data as nesc
+- For efficient state reconcilliation:
+	- All nodes maintain a limited log of historical digests and corresponding dataset states
+		- Nodes lagging behind will send out interest of an old state digest
+		- Nodes can reply with **all** the new data that has been produced since that point
+- Cases where node will receive a `SyncInterst` for an unknown digest
+	1. Node receives a sync interest with an updated digest before receiving the `SyncReply` from the previous `SyncInterest` that triggered the update
+		- ChronoSync adds random delay to unknown interest and reprocesses them later (expecting to receive the `SyncReply` in the mean time)
+	2. Multiple nodes publish at the same time can cause multiple `SyncReplies` for the same `SyncInterest`
+		- Only one of these `SyncReplies` will reach the node (NDN flow control)
+		- Nodes will receive different data items and create different state digests
+		- The handling of this is covered in the ChronoSync paper
+	3. Network partitions for a long period of time cause the dataset to diverge
+		- Basic case when nodes diverge by one SyncReply can be handled as in CCNx Sync 0.8
+			- Resend previous interest with an exclude filter for the data already seen
+		- This does not work if diverge by a bunch of interest replies
+			- Falls back to recovery interest mechanism
+			- Nodes finding unrecognised `SyncDigests` send out `RecoveryInterests`
+				- Nodes who recognise the digest reply with complete information about its sync tree
+				- Requesting node can merge their sync tree into local sync tree by taking the higher sequence number from both trees for each node 
+**A LOT OF SIMULTANEOUS DATA GENERATION IS AN ISSUE - PROBABLY NOT A GOOD CANDIDATE FOR MOGS..**
+
+# RoundSync
+- Like ChronoSync but segments time into rounds
+	- Only one piece of data can be published per node per round
+		- This makes the exclussion filter mechanism possible as the only source of reconciliation
+
+# [Real Time Data Retrieval in NDN](https://named-data.net/wp-content/uploads/2018/08/hoticn18realtime-retrieval.pdf)
+
+
 
 ## Papers to Read
 - Schematizing Trust in Named Data Networking
-- A Survey of Distributed Dataset Synchronization in Named Data Networking 
 - DonnyBrook enabling high performance peer to peer games
 - Voice over CCN (Jacobson)
 - G-COPSS / COPPS (J. Chen) content centric comms infrastructure for gaming
