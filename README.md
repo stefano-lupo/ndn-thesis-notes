@@ -464,12 +464,243 @@
 		- This makes the exclussion filter mechanism possible as the only source of reconciliation
 
 # [Real Time Data Retrieval in NDN](https://named-data.net/wp-content/uploads/2018/08/hoticn18realtime-retrieval.pdf)
+- Content can come from anywhere (router cache, producer etc)
+	- May be getting old data
+	- New joiner needs mechanism for figuring out the current frame to request it
+		- IF dont know current frame then can use prefix and will get back something
+- Uses NDN RTC app as our use case
+	- NDN-RTC Producer collects audio / video samples and splits them into data packets and serves them in response to incoming requests
+- Related work:
+	- Chasing in initial NDN RTC (for finding frame number)
+		- Send out interest using only prefix (no s no)
+			- Get frame number back
+			- Send out a bunch of interests for n+1, n+2 at a higher rate than the generation rate of frames
+			- Estimate when we are getting new frames when receival rate becomes ~= generation rate
+	- Similar in ACT (NDN audio confrencing tool)
+	- VR Video confrencing: uses a centralised signlaing server that helps newcomers discover latest data names
+		- Notifies server of first frame generated for every second
+		- Server broadcasts this to all consumers
+- **All of these are because video  / audio require info about previous frames (I think) - so not only interested in latest frame?**
+- Design:
+	- Consumers must be able to deterministically construct the name for desired piece of data
+	- Frames / Frame segments are named sequentially so that when a consumer gets one, can construct names for future data
+	- Consumers need to know most recent frame number and how they should pipeline outstanding interests for optimal performance
+		- This uses metadata packets for this
+		- Periodicallu / response to interest producer publishes these
+		- Uses `FreshnessPeriod` (NDD interest packet) so that will get metadata packets direcxtly from producer if router caches are stale
+		- Discovery interests used to fetch the latest metadata value (just prefix without metadata number)
+		- Consumers send discovery interest and measure round trip time
+			- Received metadata packet with relevant sequence number
+			- Can use this data to infer data names for frames / deltas in the near past/future
+			- **KEY**: Consumer can estimate data generation rate and pipeline interests accordingly to minimize latency
 
+# [Voice Over CCN](https://named-data.net/wp-content/uploads/JacobsonVoccn.pdf)
+- Loads of references for content focused over host 
+- "A variety of proposals call for a new Internet architecture
+focused on retrieving content by name, but it has not been
+clear that any of these approaches are general enough to support Internet applications like real-time streaming or email"
+- Implementation is "simpler, more secure and more scalable than its VoIP (Voice-over-IP) equivalent"
+- Conforms to VoIP standard payloads
+	- Interoperable with VoIP
+	- Uses a stateless IP-to-CCN gateway
+- Strategies for mapping IP based mechanisms onto NDN / CCN
+- **Background on VoIP** could be useful
+	- Session Initiation Protocol (SIP) through their respective proxies sets up a bi-directional media path between them
+- Need to support two things to map conversational protocols SIP and RTP to CCN
+	- Must be able to initiate call to callee's phone
+		- This is _service rendezvous_
+		- Typically in IP: Listen on certain port for requests and generate responses
+		- CCN: _on demand publishing_: Ability to request content not yet published, route request to potential publisher and relay the published data back to requester
+	- Must be able to transition from service rendezvous into bidirectional flow of data
+		- E.g. IP: TCP packet contains information on exactly where this packet should end up
+		- **KEY**: CCN: Need constructable names 
+			- Must be possible to construct name of piece of data without ever having seen the data / being told the name
+				- CCN: Hierarchical naming allows data to be querieid by prefix (e.g. /usr/bob instead of /usr/bob/192831)
+- SIP --> CCN
+	- Each entity has an identity (lupos@tcd)
+		- Some derivable name from that entity to which they will produce data e.g /tcd/stefanolupo/sip/invite
+		- Caller sends interest for that name + the stuff in the initial SIP invite packet
+			- Callee responds with data analgous to SIP packet
+			- Now both have the data they need
+	- Can now derive media path (content) names for the call e.g. /identity/call-id/seq-no
+- **KEY**: Interest / Data exchange typically happen in lock step (one data pakcet for one data packet)
+	- In high latency environments this can make Real time applications unusable
+	- Solution here is to always have a number of interest packets outstanding (pipeline)
+		- These are set up on call set up and maintained through out the call
+- Benefits
+	- Multipoint routing: call request can be forwarded to a bunch of places where callee might be (Property of NDN routing)
+		- Endpoints no longer have to register every time they change IP (within a routing domain) e.g. /voip/tcd
+	- Provisioning / Management of identities is simple
+		- No mapping from entity --> IPs needs to be maintained
+		- Just need to give a new entity a credential to provision (a key for signing)
+- Implementation uses a Proxy for conversions to and from VoIP <==> CCN Packets
 
+## [Secure Link State Routing Protocol for NDN](https://named-data.net/wp-content/uploads/2016/01/ndn-0037-1-nlsr.pdf)
+### [First, what is LSR?](http://cnp3book.info.ucl.ac.be/principles/linkstate.html)
+- Family of routing protocols. 
+- LS routers exchange messages allowing them to learn entire network topology
+- Network is modeled as a directed weighted graph
+- Each router can then compute its routing table as shortest path (Dijkstra)
+- Weights can be set as:
+	- Unit  weights (edge weight == number of intermediate routers)
+	- Weight proportional to propogation delay
+		- Shortest path has smallest propogation delay
+	- (C | C > link with max bandwidth) / bandwidth
+		- Each node is a factor of max bandwidth
+		- Shortest path prefers paths with higher bandwidths
+- Same edge can have different weights depending on direction (R1 -> R2 != R2 -> R1)
+	- Useful if uplink / downlinks are different
+- Routers broadcast HELLO messages on all of their interface ports
+	- Enables adjacent routers to discover one and other
+- To build up entire topology, LSRs maintain Link State Packets (LSPs)
+	- Routes flood their local interfaces with these LSPs when they receive a new one (they're sequence numbered)
+	- Flooding is required as these are what is used to _build_ the routing tables so they can't rely on routing tables
+### Paper
+- Intra domain routing protocol for NDN
+	- **INTRA** - inside of a single domain!!!!!!
+	- But some of the learnings are applicaple to inter domain routing
+- Application level routing protocol
+	- Uses NDN Interests / Data to disseminate routing updates
+	- Gets all benefits of this (security etc)
+- Differs from IP Based LSR
+	- Hierarchical naming of routers, keys and routing updates
+	- Hierarchical trust model for routing within single domain
+	- Routing info dissemination using _ChronoSybc_
+	- Multipath routing - way to calculate and rank multiple forwarding options
+- NDN routing mechanism needs tu offer multiple next hops
+- Must use NDN packets instead of IP packets
+- Benefits
+	- As routers use hierarchical NDN Names, there is no dependency on communication channel
+		- Thus can be used on ethernet, IP, TCP/UDP tunnels etc
+	- NDN packets have signature allowing routers to verify routing messages
+		- This requires a trust model
+	- Multipath forwading:
+		- IP must avoid forwading loops, NDN has no such requirement (NDN has built in loop detection (PIT))
+		- FIB can thus have multiple next hops for the same name prefix
+- As NDN uses a _stateful forwarding plane_
+	- The decision of next hop is not soley based on a routing entry
+	- Also examines the PIT
+	- The PIT also enables routers to measure performance of next hops (e.g. round trip time) as it maintains the state of an interest it has forwarded anyway, unlike in IP which just forwards it on and forgets
+- Improvements over previous NLSR
+	- uses ChronoSync to distribute Link State Advertisements (LSAs) (probably analgous to LSPs)
+	- advertises all the name prefixes originated by a router in one LSA
+- ** The routing protocols ranking is important for the initial interest as there may be no measurements yet for that name / next hop ** 
+- ** NB: Forwarding strategy defines what the router should do in the case of multiple next hops **
+- Some key differences over related protocols in IP land (comparing to [this](A two-layer intra-domain routing scheme for Named Data Networking)) (see P2 of paper)
+	- Uses NDN packets as its only communication mechanism
+	- Uses ChronoSync to disseminate LSAs while that uses OSPF to figure out shortest path
+	- Offers multipath forwarding only if there are _multiple producers_
+		- NLSR allows multiple forwarding paths even towards a single producer
+- Other NDN Routing protocols don't propogate _all_ of prefix information
+	- Instead they try to determine the best one and propogate that
+	- This is a problem for NDN as that producer might not have _all_ the data for that prefix
+		- Registering a prefix just says that you also have some data to publish under than namespace
+		- Others may have some too!
+		- This differs to IP routing
+			- If an IP router advertises a certain address, it means it can access **all** of the nodes under that address prefix
+- Designing routing protocol for NDN is different to IP
+	- In IP, any node can push a packet to any other node
+	- NDN must be considered in terms of data names and data retrieval
+		- Requires naming schemes for routers and routing updates
+- Hierarchical Naming Scheme
+	- `/<network>/<site>/<router>`
+		- `<router>` is split into `<router_tag>/<router_label>`
+	- If two routers have the same network prefix, we know they're on the same network
+	- If two routers have the same network and site prefix, we know they belong to the same site
+	- NLSR process running on a certain router also has a name
+		- `<full_router_name>/NLSR`: i.e. `/<network>/<site>/<router>/NLSR`
+		- This is used for info messages between adjacent NLSR routers
+- LSAs
+	- Each node maintains the latest versions of the LSAs in a Link State Database (LSDB)
+	- Each router maintains adjacency relations with neighbour routers
+		- Publishes a new LSA whenever it detects failure / recovery of a link
+	- They also produce prefix LSAs which contain the list of prefixes they are responsible for
+	- These are synced using ChronoSync
+	- LSAs must have a broadcast prefix
+		- As with flooding in IP, this mechanism is what configures routing / forwading
+		- This means there may not be any FIB entries setup yet to get a certain LSA
+		- Thus when chronosync informs an NLSR process of a new LSA
+			- The process creates an interest for the LSA on the broadcast prefix `/<network>/NLSR/LSA/<interest??>`
+			- This is then forwarded to all of the _neighbours_ of the node
+				- These can respond if they have it in their CS
+				- Or it can be forwarded (broadcasted) by the neighbours until it is resolved
+
+![NLSR LSAs](./img/nlsr/nlsr_lsas.png)
+
+- NDN Security
+	- Each NDN data packet is signed with an private key.
+	- Metadata item indicates the name of the key used to sign the packet
+		- Receiver can fetch the key and decrypt the packet
+	- Thus, need a trust model for key authentication
+- NLSR Trust Model
+	- Trust managemnt modeled as a 5 layer hierarchy
+	- Single authority responsible for the network (_trust anchor_)
+		- Each network has many sites (e.g. router that connects home to ISP, School of Engineering etc)
+			- Each site has one or more operators
+				- Each operator manages a number of routers
+					-	 Each router runs an NLSR process that can produce LSAs
+	- The process key used to sign an LSA must be:
+		- Signed by corresponding router key,
+			- Which in turn should be signed by an operator of the same site's key
+				- Which in turn should be signed by the site's  key
+					- Which in turn must be signed by the network key (trust anchor)
+- **Certs for each key are signed by the key of one level higher in the hierarchy**
+- **Network key is self-signed (trust anchor)**
+
+![NLSR Trust Hierarchy](./img/nlsr/nlsr-trust-hierarchy.png)
+- The key names indicate the role of the key
+	- e.g. network key is `/<network>/KEY/<key>`
+	- router key is `/<network>/<site>/<router>/KEY/<key>`
+	- Note operator key is similar to router key: `/<network>/<site>/<operator>/KEY/<key>`
+		- To differentiate between operator and router keys there is two compoonents to this field: tag and label
+			- Operator tag : `%C1.Operator`, Router tag: `%C1.Router`
+			- The entities label then follows this
+	- The key scopes are restricted
+		- E.g. operator key can only certify router's belonging to the site to which they both belong
+- Key Retrieval:
+	- Keys can be queried using Interest / Data as normal
+	- Agian, as they must be obtainable _before_ routes are set up
+		- Routers can requests keys from all of its direct neighbours
+		- If they have it in CS, they will return it.
+		- Otherwise they forward it to their neighbours
+		- Use a broadcast prefix `/network/broadcast/KEYS` for looking for keys in this way
+- Multipath Calculation
+	- Using adjacency LSAs from each NLSR node, can build a network topology
+	- For an individual direct adjacent neighbour:
+		- Run Djikstra to calculate the cost of using that neighbour to reach every other node in the topology
+	- Repeat this for each direct neighbour
+	- Now have shortest path to get to any node through any of the direct neighbours
+	- Rank them according to their cost
+	- As we also know the prefixes associated with each router
+		- Can obtain a list of next hops to reach each name prefix
+- NLSR Hello protocol
+	- Periodically send INFO interest to all of its adjacent nodes
+	- If this times out to a node, retry a few times in quick succession
+		- If still timeout, then link has failed / no has died
+		- Mark as inactive from its adjacency list, redistribute LSA, recalculate routing table
+	- Also uses _face event notifications_ from the NFD which inform NLSR of when events occur on a certain face
+		- Guessing things like sockets closing etc
+
+## How to Analyze Results (Misc papers)?
+- Clock ticks per second (NLSR)
+- RTT of pings (NLSR)
 
 ## Papers to Read
 - Schematizing Trust in Named Data Networking
 - DonnyBrook enabling high performance peer to peer games
-- Voice over CCN (Jacobson)
 - G-COPSS / COPPS (J. Chen) content centric comms infrastructure for gaming
 - Aspects of networking in multiplayer computer games --> Server Pools?
+- NDN Naming scheme
+
+
+
+### Realtime
+- Voice over CCN (Jacobson)
+- NDN RTC
+- ACT NDN audio confrencing tool
+- VR video conferencing over Named Data Networks
+
+### Routing
+- Similar to NLSR but for IP [here](A two-layer intra-domain routing scheme for Named Data Networking)
+- [ICN Routing](A new approach to namebased link-state routing for information-centric networks)
+- [More IP Routing similar to NLSR](Routing to multi-instantiated destinations: Principles and applications)
