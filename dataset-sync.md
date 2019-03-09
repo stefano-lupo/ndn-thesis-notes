@@ -84,6 +84,120 @@
 - Like ChronoSync but segments time into rounds
 	- Only one piece of data can be published per node per round
 		- This makes the exclussion filter mechanism possible as the only source of reconciliation
+Dont think I finished this paper..
+
+# [PSync](https://named-data.net/wp-content/uploads/2017/05/scalable_name-based_data_synchronization.pdf)
+- Some DSS require all members to receive every message - full data sync (e.g. chat)
+- Partial Synchronization - generalization of full data sync where [none - all] of the data may be of interest
+- Common PubSub requirements (phone app store analogy)
+	- App store (publishers) should not have to keep track of users of each app in order to publish notifications of app updates
+	- Phones should not have to check the app store periodically for updates for **every** app
+	- Phones should be able to synchronize with any app store that has same set of apps
+- PSync uses invertible bloom filters to represent latest names in a namespace
+	- Uses subtraction op of IBF to efficiently discover list of new data names between old and new IBF
+- Scalability under a large number of consumers
+	- Consumer interest contains consumer sub info and previously known producer state
+		- Producers don't need to maintain state on each consumer
+	- Producers keep single IBF of its state for all consumers, instead of one per consumer
+- Robustness under producer failures
+	- As it's up to consumers to provide their state to producers
+		- A consumer can sync with any producer with replicated data
+- Scalability under large number of subscriptions
+	- Data representations like Bloom filters and ranges encode a consumers subscription info
+		- Only one intrest sent out regardless of number of subscribed prefixes
+
+## Bloom Filter
+- Equation for false positive rate of bloom filter is interesting
+- Basic bloom filter doesn't support remove operations since multiple elements may set same bit to 1
+- Counting Bloom Filter
+	- Keep count at each bit position
+	- Every time inserted, add 1 to count, deleted decrement by 1
+	- When a bit count reaches zero, the bit can be marked as 0
+	- Supports deleting elements from bf
+
+## Invertible Bloom Filters
+- Hash functions map to data structures (cells) which contain: {idSum, hashSum, count}
+- On insert: hash functions get list of cells of interest
+	- `idSum` is XORed with inserted elements KeyID
+	- `hashSum` is XORed with the inserted elements hashValue
+	- Increment count by one
+- On Deletion
+	- Same as above
+	- Decrement count by 1
+- List of elements can be retrieved by looking for pure cells
+	- Contains only one item (count == 1) && hash(idSum) == hashSum
+	- On finding pure cell, it is removed from the IBF
+		- This can remove a collision thus creating more pure cells
+	- This repeats till no more pure cells
+- IBFs Set Difference OP:
+	- I'm confused...
+	- In any case, can determine different elements in the two IBFs and to which IBF each different element belongs
+- Only fixed length names (keyId) can be inserted into IBF
+	- To store NDN names, they need to first be hash
+		- Keep a map keyId --> Ndn Name to retrieve
+## Design
+- _Data Stream_ defined as aa set of data which have the same prefix but different sequence numbers
+	- Assume each producer generates a data stream
+- Uses standard NDN interest and data for subscription and notification
+- Sync interest
+	- `/<prefix>/psync/<SL>/<old-IBF>`
+	- SL == subscriber list
+- Sync reply	
+	- `/<prefix>/psync/<SL>/<old-IBF>/<new-IBF>`
+	- + content
+- Each consumer sends sync interest to producer to learn about newly produced data in the sub'd data streams
+	- Producer can obtain SL from Interest name
+	- If SL has new data items, producer sends a Sync Reply containing list of data names
+		- Only for things in SL they are interested in 
+	- Returned data names _may be false positives_ --> consumer can just ignore them
+	- Otherwise fetch data
+	- Producer keeps track of outstanding interests if no new data
+		- When interest expires, consumer sends a new one
+### Data Representation
+- Producer has n strams: [P = P1, ..., Pn], consumer only interested in Q = [q1, .., qj]
+	- Q can be hashed into bloom filter f.
+	- Special Cases:
+		- Q = P, Q = 1
+		- q is a sequential range [pi, ..., pj]
+- Producer State:
+	- Producer names data sequentially (incrementing sn)
+	- Latest dataset can be represented as an IBF with **one data name for each data stream**
+		- i.e. `/<datastream_fq_name>/<sequence_number>`
+	- Can use IBF set difference with the BF in consumer's sync interest
+## Phases
+- Init
+	- Consumer needs to know what data streams to sub to and get latest IBF
+	- Sends Hello Interest `/prefix/psync-hello`
+	- Producer responds with latest IBF and list of data names
+	- Consumer chooses things to subscribe to and enters sync phase
+	- Alternatively if consumer knows what it wants to sub to it can get just the IBF with
+		- `/prfix/psync-hello/get-IBF`
+- Sync
+	- Consumer sends sync interest (with SL)
+	- Three scenarios
+		- Producer IBF > Consumer IBF ==> producer gets all names using difference between IBFs and send a sync reply
+			- **If data is small, it can piggy back the sync reply!**
+		- If IBFs are same ==> producer keeps somewhere (or not if memory limited)
+			- When data updates: producer checks SL for all outstanding and sends data if there is any
+			- It can also drop the interest if memory limited at the expense of longer delay between updated
+		- If number of new data items gets out of hand, sends a reply interest anyway (even if not in SL)
+			- This is to keep the producers future IBF small enough to be decoded
+			- _Not sure how it would be getting bigger if its not in the SL anyway.._
+- Lost Interests (syncs that dont reach producer, or data that dont reach consumer) can be a source of delay
+	- But only as long as interest lifetime so this should be taken into account
+	- Lost sync replies will likely be provided by router content stores along the way on the next interest
+
+## Multiple Producers (of replicated data)
+- Assume producers sync dataset state fully amongst themselves
+- Assume producers register same sync prefix
+- Assume sync interests are forwarded NOT using multicast strategy (given consumer interest only arrives at one producer)
+- Then its pretty trivial..
+
+## Full Dataset Sync
+- Everyone registers _same Sync name prefix_ to receive Sync Interests from everyone else
+- Every SL is entire namespace
+- Everyone also has a consumer subscribed to the entire namespace
+- Sync components need to be forwarded using a multicast strategy
 
 
 ## [Lets ChronoSync](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.705.8908&rep=rep1&type=pdf)

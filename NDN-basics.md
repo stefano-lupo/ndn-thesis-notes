@@ -11,7 +11,19 @@
 ### Content Store
 ### Pending Interests Table
 
-## Intro to NDN [YouTube](https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
+# [NDN Technical Memo on Naming Conventions](https://named-data.net/wp-content/uploads/2014/08/ndn-tr-22-ndn-memo-naming-conventions.pdf)
+- Nothing majorly interesting but good reference
+
+# [NDN Architecture](https://named-data.net/project/archoverview/)
+- Outline of architecture overall
+
+# [NDN Packet Specs](https://named-data.net/doc/NDN-packet-spec/current/)
+- Options and values for all NDN packets
+
+# [NDN Dev Guide](http://named-data.net/wp-content/uploads/2018/07/ndn-0021-10-nfd-developer-guide.pdf)
+- Lots of info
+
+# Intro to NDN [YouTube](https://www.youtube.com/watch?v=-9dH2ikl8Zk&feature=youtu.be)
 - Host based comms don't work well in vehicular networks
 - Network layer can't really support Multicase / mobility / multicast forwarding (spanning tree next hop)
 - NDN has same abstraction (using same name) at app layer and network layer

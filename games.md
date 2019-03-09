@@ -203,7 +203,7 @@
 	- Thus all game object updates are sent to the coordinator (who is easily discoverable)
 	- Updates are sent to all nodes in the region through the muilticast tree
 	 
-## Unstructured P2P
+### Unstructured P2P
 - No deterministic alg used
 - No global mechanism such as DHT
 - Nodes randomly connected to each other (usually probibalistically higher to connect to nearby nodes etc)
@@ -212,7 +212,173 @@
 	- A node in your AOI will inform you if a new node is approaching your AOI
 	- You can then contact that node directly and neighbourship formed
 
+## PubSub Network Designs for Multiplayer Games](http://msrg.utoronto.ca/publications/pdf_files/2014/psgames-Publish-Subscribe_Network_Designs_for.pdf)
+- Three PubSub architectures - one with servers, brokers and clients, two with just clients and brokers
+### Interest Mgmt
+- Rectangle Based
+	- Area of Interest (AOI) is a rectangle centered over a point (avatar)
+	- False Positive: If entity is behind a wall (not visible) --> rectangle based still thinks its interesting
+- Tile Based
+	- World divided into tiles
+	- Tile borders never cross impassable borders!
+	- Can use constrained Delaunay triangulation to make tiles obstacle aware 
+	- Player is only ever on one tile
+		- AOI of each tile in gameworld can be precomputed 
+		- Then can easily get AOI for any player
+- IM is actually usually performed on the server
+	- Requires a lot of knowledge 
+	- Can be distributed across nodes each owning a section of the gameworld
+	- Proposes a way for clients to do their own IM
+### Network Comms
+- Update Messages
+	- Client wants to update master copy of game object
+		- Request must be sent to master copy holder
+		- Update performed
+		- Update must propogate to all interested nodes
+		- Send deltas instead of entire object
+- Replica Transfers
+	- Needed as cannot construct new game object from detlas
+	- On discovery of a new interesting game object
+	- Client sends replica request object
+	- Typically point to point
+- Need different pub sub approaches to handle point to point comms
+- PubSub typically used to distribute updates to all subscribed consumers
+	- Not typically used for replica transfers (but will be in this paper)
+- **Mercury/ Decentralized pub sub style systems**
+	- _Content_ (not topic) based decentralized pub sub system
+	- Use rendevous points (similar to Scribe/Hermes)
+	- Publications / Subscriptions are sent to rendevouz points
+		- Then matched to their appropriate recipients and sent on
+	- Subscriptions contain predicates which are run through content-based engine
+	- Allows clients to subscribe to attributes they find interesting using predicates
+		- e.g within a certain radius of plauer
+	- This works well for several tens of plauers where a client can have replicas of all objects in game (e.g. FPS game)
+- **G-COPSS: Content oriented pub sub system**
+	- Partitions game world hierarchicaly into layers
+	- Players can send / receive updatesto particular layers they are interested in
+- **Both of the above can handle update dissemination but not object replication**
+	- This means clients must have replicas of all in game objects at startup through some mechanism
+	- This is unrealistic for MMOGs due to sheer number of game objects
+- Three use cases targetted by paper:
+	- Object discovery
+		- Replicas need to be requested as player's AOI moves
+		- Hopefully dont need a server for IM
+	- Replica Transfer
+		- On discovery of new game object in AoI
+		- Need protocol for transfer of replica from master to client
+	- Update Propogation
+		- Sending game state updates from master node to all nodes
+- Point to Point Comms
+	- Each node has a topic
+	- In order to communicate with Node N, just publish message to N
+
+**Key Difference: These all use extra broker nodes to provide pub-sub functionality**
+
+### Engine 1: Object Based Network Engine
+- Topic based p/s: one topic per game object, one comms channel per game object
+	- **Probably able to reuse comms channels (faces in this case) in NDN**
+- Interest in object, subscribe to topic
+- Requires separate IM service
+	- Receives updates of all players and monitors interest of each player
+- Relays interested in Game objects back to clients who subscribe to those topics
+- Tasks:
+	- Object Discovery:
+		- Handled entirely by IM service
+	- Replica Transfer:
+		- IM service sends point to point message to client via client topic 
+		- Client then subs to game objects topic and sends Replica Request Messae
+		- Reverse for leaving Interest zone
+	- Update Propogation
+		- Client requests update to master holder
+		- Master holder decides whether its valid and updates accordingly
+		- Master then publishes object update
+- Only message making use of multicast capable pub sub is the update dissemination
+
+### Engine 2: Tile based Network Engine
+- Used for games which partition word into tile map 
+- Communication between nodes done via topics linked to map tiles
+- No dedicated IM present
+- Node topics as before
+- For each tile: 3 different topic channels for each tile
+	- Replica Request
+		- Used to request replicas
+		- Master holders _subscribe_ to replica request topic of tile if one or more of their master objects is on that tile
+		- Clients can use replica request of tile T to get all game objects on that tile with single publication
+	- Replica Reply
+		- Used to transfer the actual replicas
+		- Clients subscribe temporarily to tile T's Replica Reply topic _before_ producing to replica request for T
+		- All subs here are _temporary_
+	- Notify Update
+		- Nodes subscribe to Notify Update topic of tiles of their AOI
+		- As clients know their AOI in terms of tiles (precomputed) they know which Notify Update topics to sub to
+- Use cases
+	- Update Propogation
+		- Clients request updates through the master copy holder's own node topic
+		- MAsters then propogate updates using multicast of the Notify update of tile it resides one
+- Object Discovery
+	- Consider P1 moving to T which puts P2 in interest region (and P1 in P2s interest region)
+	- Two things: (a) P1 needs to discover all game objects of interst for T, (b) P2 has to discover than P1 has entered its AoI
+	- Master holders always subscribe to replica request topic of tile for their game objects
+		- P1 subs to rep reply of **all** tiles in its new AoI
+		- P1 then publishes replica request to all of the topics for each of its tiles in its new AoI
+		- All master holders now receive P1s replica requests
+		- That handles (a)
+	- When P1 moves onto tile T:
+		- It publishes an update to Tile T's Notify Update
+		- But P2 will be subscribed to this
+		- So P2 gets a notify update for a replica it doesnt have and can request one
+- Replica Transfer
+	- Pretty simple: P1 publishes to Replica Request, master sees this (as they sub to this) and publishes replica to Replica Reply
+	- For (b) above: P2 receives a notify update for a replica it doesnt have:
+		- Subscribes to replica reply for tile T
+		- Publishes to replica request for that object
+		- Receives replica reply from P1
+- **This is cool because object discovery and replica transfer dont rely on point to point comms anymore**
+- **Upon moving to new tile T, just send _one_ request to Replica Request for each T' that you are interested in and get back all of the replicas**
+- **Can potentially coallesce replica requests so that a single reply can potentially serve multile requests (e.g. multiple people become interested in same tile at same time)**
+
+### Engine 3: Area-Based Engine
+- _Content_ (not topic) based engine
+- Much finer grained control over pub as subs can contain filters allowing fine grained multi cast
+- Can be used to specify locations and AoI ranges
+- Can publish events wtih xy coords of where event takes place
+	- Player moves, publish its new x and y
+- Can subscribe to rectangle using x and y predicates
+- Player movement 
+- Has 3 channels again: Replica Request, Replica Reply and Notify Update
+	- **BUT NOW THERE IS ONLY 3 CHANNELS FOR THE ENTIRE WORLD!**
+	- Notify Update:
+		- Each client subs to this with x and y ranges that define AoI
+		- Updates to objects are published on a point
+		- All clients subbed with predicate that this point falls within get notified of update
+	- Replica Request:
+		- Master holder of object subscribes to Replica Request topic with xy that represents AoI of that object
+		- Replica requests associated with an XY and if that falls within master copies xy, they receive request
+	- Replica Reply:
+		- As before, client nodes subscribe to this temporarily before requesting replicas
+- Use Case:
+	- Update Propogations:
+		- When player wants to update an object, uses master node's topic and point to point to issue update request
+		- Master then publishes update on Notify Update
+	- Object Discovery:
+		- Case (a):
+			- **Note: AOI updates are regulated by time, distance or both to minimize number of AOI changes and replica requests**
+			- Client subs to replica reply with its AoI
+			- Publishes replica request using current location as AoI center
+			- Master holders can respond with ths
+		- Case (b):
+			- Same as before
+	- Replica Transfer:
+		- Case (a): easy, master just sends replica reply on replica reply topic using master's location
+		- Case (b): As before.
+
+- Basically same as tile based, except mechanism for describing the AoI is different
+	- Area is rectangular and non aware in area base
+	- Way less comms channels (no longer one per tile)
+
+
 ## Papers to Read
 - DonnyBrook enabling high performance peer to peer games
 - G-COPSS / COPPS (J. Chen) content centric comms infrastructure for gaming
 - Aspects of networking in multiplayer computer games --> Server Pools?
+- J.-S. Boulanger, J. Kienzle, and C. Verbrugge. Comparing interest management algorithms for massively multiplayer games. In NETGAMES, page 6,2006.
